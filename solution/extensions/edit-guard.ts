@@ -7,8 +7,13 @@ import path from "node:path";
  * The agent periodically gets stuck rewriting one file - almost always its own
  * test - and cannot converge. Measured across runs on identical configuration:
  *
- *   healthy runs   57-70 calls    max  6-7 edits to any single file
- *   thrashing runs 122-178 calls  max 19-20 edits to a single file
+ *   healthy runs    max  3-12 edits to any single file
+ *   thrashing runs  max 19-25 edits to a single file
+ *
+ * Recalibrated after GLM-5.2: its healthy runs reach 12 edits where gpt-oss
+ * peaked at 7, so the original threshold of 10 fired on a successful run. The
+ * populations still separate cleanly - nothing healthy exceeds 12, nothing
+ * thrashing starts below 19 - so the nudges sit in that gap.
  *
  * A 178-call run cost EUR 0.55 against EUR 0.087 for a 23-call run of the same
  * idea. Thrashing, not prompt size, is the dominant cost risk.
@@ -25,9 +30,9 @@ import path from "node:path";
  * `partial` no matter how good the application is.
  */
 
-const FIRST_NUDGE = 10;
-const SECOND_NUDGE = 16;
-const HARD_STOP = 24;
+const FIRST_NUDGE = 14;
+const SECOND_NUDGE = 19;
+const HARD_STOP = 26;
 
 export default function editGuard(pi: ExtensionAPI) {
   const appRoot = process.cwd();
