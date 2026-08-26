@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import path from "node:path";
 import reportWriter from "./report-writer.js";
+import editGuard from "./edit-guard.js";
 
 export const PI_DOCUMENTATION_HEADING = "Pi documentation (read only when ";
 const PI_DOCUMENTATION_BLOCK_START = `\n\n${PI_DOCUMENTATION_HEADING}`;
@@ -30,6 +31,7 @@ export default function protectedPaths(pi: ExtensionAPI) {
 
   // The runner passes a single --extension, so compose here.
   reportWriter(pi);
+  editGuard(pi);
 
   pi.on("before_agent_start", async (event) => ({
     systemPrompt: stripPiDocumentationBlock(event.systemPrompt),
