@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
 import { readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
@@ -169,10 +169,86 @@ export function synthesizeReport(runs: TestRun[], assumptions: string[] = []): R
   };
 }
 
+
+const TSC_TIMEOUT_MS = 120_000;
+
+interface CommandOutcome {
+  code: number | null;
+  output: string;
+}
+
+function runCommand(command: string, args: string[], cwd: string, timeoutMs: number): Promise<CommandOutcome> {
+  return new Promise((resolve) => {
+    let output = "";
+    let settled = false;
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      resolve({ code, output });
+    };
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"], shell: false });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(null);
+    }, timeoutMs);
+    child.stdout?.on("data", (chunk) => (output += String(chunk)));
+    child.stderr?.on("data", (chunk) => (output += String(chunk)));
+    child.on("error", () => {
+      clearTimeout(timer);
+      finish(null);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      finish(code);
+    });
+  });
+}
+
+/**
+ * What the runner will check, checked here first. Returns a human-readable
+ * problem report, or undefined when the workspace is clean.
+ *
+ * A single stray character in a test file - `/^Charge/ i` instead of
+ * `/^Charge/i` - failed the production-build check AND stopped Vitest
+ * collecting any tests at all, taking a working application down to `partial`.
+ * The agent is told to run tests and the build before finishing. It does not.
+ */
+export async function findBlockingProblems(appRoot: string): Promise<string | undefined> {
+  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+  const typecheck = await runCommand(npx, ["tsc", "--noEmit"], appRoot, TSC_TIMEOUT_MS);
+  if (typecheck.code !== 0) {
+    const detail = typecheck.output.trim().split("\n").slice(0, 12).join("\n");
+    return `\`npx tsc --noEmit\` fails, so \`npm run build\` cannot pass:\n\n${detail}`;
+  }
+
+  const { runs, ran } = await collectVitestEvidence(appRoot);
+  if (!ran) return "Vitest could not run to completion in this workspace.";
+  if (runs.length === 0) return "Vitest collected zero tests. Every user journey must have a test that runs.";
+
+  const failing = runs.filter((run) => run.result !== "passed");
+  if (failing.length > 0) {
+    return `${failing.length} test(s) are not passing:\n\n` + failing.map((r) => `- ${r.journey}`).join("\n");
+  }
+  return undefined;
+}
+
+function repairInstruction(problems: string): string {
+  return [
+    "Automated verification of the workspace failed.",
+    "",
+    problems,
+    "",
+    "Fix this now, then run `npm test` and `npm run build` to confirm both pass.",
+    "Change only what is needed to make them pass. Do not start new features.",
+  ].join("\n");
+}
+
 export default function reportWriter(pi: ExtensionAPI) {
   const appRoot = process.cwd();
   const reportPath = path.join(appRoot, REPORT_FILE);
   let observedTestCommand: string | undefined;
+  let repairAttempted = false;
+  let reportIsStale = false;
 
   // Remember the command the agent actually used, so a repaired entry is truthful.
   pi.on("tool_result", async (event) => {
@@ -184,9 +260,32 @@ export default function reportWriter(pi: ExtensionAPI) {
 
   // Last moment before Pi stops for good.
   pi.on("agent_settled", async (_event, context) => {
+    // Always leave a valid report on disk before anything else, so a repair
+    // attempt that never comes back cannot leave the run with nothing.
+    await ensureReport(context);
+
+    if (repairAttempted) return;
+    repairAttempted = true;
+
+    const problems = await findBlockingProblems(appRoot);
+    if (!problems) return;
+
+    const send = (context as { sendUserMessage?: (text: string) => Promise<unknown> }).sendUserMessage;
+    if (typeof send !== "function") return; // no way to ask for a repair; report already written
+    if (context.hasUI) context.ui.notify("Verification failed - requesting one repair pass", "warning");
+    reportIsStale = true;
+    // Fire, do NOT await. Awaiting here deadlocks: sendUserMessage resolves only
+    // once Pi processes the message, and Pi cannot start until this handler
+    // returns. An earlier version awaited it and hung until CHALLENGE_TIMEOUT_MS.
+    void Promise.resolve(send.call(context, repairInstruction(problems))).catch(() => undefined);
+    // Pi runs again; agent_settled fires a second time and ensureReport() reruns
+    // against the repaired workspace.
+  });
+
+  async function ensureReport(context: ExtensionContext) {
     const existing = await readReport(reportPath);
 
-    if (existing && entriesAreComplete(existing)) return; // agent did its job
+    if (!reportIsStale && existing && entriesAreComplete(existing)) return; // agent did its job
 
     // Case 1: a report exists but its entries would be discarded by the runner.
     if (existing && Array.isArray(existing.tests_run) && existing.tests_run.length > 0) {
@@ -214,12 +313,14 @@ export default function reportWriter(pi: ExtensionAPI) {
     }
 
     // Case 2: no usable report at all. Rebuild it from a real Vitest run.
-    const { runs, ran } = await collectVitestEvidence(appRoot, context.signal);
-    if (!ran) return; // cannot verify anything - do not write a claim we cannot support
+    // Even when Vitest cannot run we still write a report: zero entries is an
+    // honest claim (the runner scores it `partial`), whereas writing nothing
+    // triggers FALLBACK_PARTIAL and a hardcoded "failed".
+    const { runs } = await collectVitestEvidence(appRoot, context.signal);
     const assumptions = await readRecordedAssumptions(appRoot);
     await writeFile(reportPath, `${JSON.stringify(synthesizeReport(runs, assumptions), null, 2)}\n`, "utf8");
     if (context.hasUI) {
       context.ui.notify(`report.partial.json written from ${runs.length} recorded test result(s)`, "info");
     }
-  });
+  }
 }
