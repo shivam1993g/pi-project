@@ -315,14 +315,16 @@ export default function reportWriter(pi: ExtensionAPI) {
     const problems = await findBlockingProblems(appRoot);
     if (!problems) return;
 
-    const send = (context as { sendUserMessage?: (text: string) => Promise<unknown> }).sendUserMessage;
-    if (typeof send !== "function") return; // no way to ask for a repair; report already written
+    // sendUserMessage is on ExtensionAPI (pi), NOT on the per-handler context.
+    // An earlier version called context.sendUserMessage and the defensive typeof
+    // check silently swallowed it, leaving this whole path dead across three runs.
+    if (typeof pi.sendUserMessage !== "function") return; // report is already written
     if (context.hasUI) context.ui.notify("Verification failed - requesting one repair pass", "warning");
     reportIsStale = true;
     // Fire, do NOT await. Awaiting here deadlocks: sendUserMessage resolves only
     // once Pi processes the message, and Pi cannot start until this handler
     // returns. An earlier version awaited it and hung until CHALLENGE_TIMEOUT_MS.
-    void Promise.resolve(send.call(context, repairInstruction(problems))).catch(() => undefined);
+    void Promise.resolve(pi.sendUserMessage(repairInstruction(problems))).catch(() => undefined);
     // Pi runs again; agent_settled fires a second time and ensureReport() reruns
     // against the repaired workspace.
   });
