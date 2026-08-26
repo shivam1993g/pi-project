@@ -2,6 +2,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { spawn } from "node:child_process";
 import { readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const BASELINE_STYLES_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "styles",
+  "baseline.css",
+);
 
 /**
  * Safety net for `report.partial.json`.
@@ -243,6 +251,38 @@ function repairInstruction(problems: string): string {
   ].join("\n");
 }
 
+
+const BASELINE_MARKER = "/* agentcofounder-baseline */";
+
+/**
+ * Append the baseline stylesheet to the generated app.
+ *
+ * Every run so far has left src/styles.css byte-identical to the template,
+ * which styles only the placeholder screen the agent replaces - so the app
+ * renders with unstyled browser defaults. Element-selector rules appended at
+ * the end apply to whatever markup the agent wrote, and lose to any class rule
+ * it authored itself, so this fills gaps rather than overriding intent.
+ */
+export async function applyBaselineStyles(appRoot: string, baselinePath: string): Promise<boolean> {
+  const stylesPath = path.join(appRoot, "src", "styles.css");
+  let current: string;
+  try {
+    current = await readFile(stylesPath, "utf8");
+  } catch {
+    return false; // no stylesheet to extend; the app may not import one
+  }
+  if (current.includes(BASELINE_MARKER)) return false; // already applied
+
+  let baseline: string;
+  try {
+    baseline = await readFile(baselinePath, "utf8");
+  } catch {
+    return false;
+  }
+  await writeFile(stylesPath, `${current.trimEnd()}\n\n${BASELINE_MARKER}\n${baseline.trimStart()}`, "utf8");
+  return true;
+}
+
 export default function reportWriter(pi: ExtensionAPI) {
   const appRoot = process.cwd();
   const reportPath = path.join(appRoot, REPORT_FILE);
@@ -260,6 +300,11 @@ export default function reportWriter(pi: ExtensionAPI) {
 
   // Last moment before Pi stops for good.
   pi.on("agent_settled", async (_event, context) => {
+    // Presentation first: it changes no behaviour, so it must not be gated on
+    // verification passing or on the agent having cooperated.
+    const styled = await applyBaselineStyles(appRoot, BASELINE_STYLES_PATH);
+    if (styled && context.hasUI) context.ui.notify("Applied baseline stylesheet", "info");
+
     // Always leave a valid report on disk before anything else, so a repair
     // attempt that never comes back cannot leave the run with nothing.
     await ensureReport(context);

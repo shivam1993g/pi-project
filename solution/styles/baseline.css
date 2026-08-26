@@ -1,0 +1,251 @@
+/* ---------------------------------------------------------------------------
+ * Baseline presentation, appended by solution/extensions/report-writer.ts.
+ *
+ * Every run so far has shipped this file untouched from the template, which
+ * styles only .shell/.placeholder/.eyebrow - classes belonging to a placeholder
+ * screen the agent replaces. So inputs, buttons, tables and headings fall back
+ * to raw browser defaults.
+ *
+ * These rules use ELEMENT selectors only (specificity 0,0,1) so they apply to
+ * whatever markup the agent writes without it having to cooperate, and any
+ * class-based rule it does author still wins. Nothing here names a domain.
+ * ------------------------------------------------------------------------ */
+
+/* The template centres a single placeholder card with `place-items: center`
+   on .shell. The agent reuses that class as the application shell, where
+   centring every child is wrong - it is why generated apps render as a narrow
+   ragged column. Neutralised here; #root supplies the real container. */
+.shell {
+  display: block;
+  min-height: 0;
+  place-items: initial;
+  padding: 0;
+}
+
+#root {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 2.75rem);
+  text-align: left;
+}
+
+/* --- type ---------------------------------------------------------------- */
+
+h1 {
+  font-size: clamp(1.55rem, 3.6vw, 2.05rem);
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.4rem;
+}
+
+h2 {
+  font-size: 1.16rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 2rem 0 0.85rem;
+}
+
+h3 {
+  font-size: 1rem;
+  margin: 1.4rem 0 0.6rem;
+}
+
+p {
+  margin: 0 0 0.9rem;
+  max-width: 68ch;
+  line-height: 1.6;
+}
+
+/* --- forms --------------------------------------------------------------- */
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  align-items: flex-start;
+  margin: 0 0 1.4rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #3d4759;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: 0.95rem;
+  color: inherit;
+  background: #ffffff;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #c9d1e0;
+  border-radius: 6px;
+  min-width: 13rem;
+  max-width: 100%;
+}
+
+textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  min-width: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #2f5bd7;
+}
+
+/* checkbox and radio labels read as a row, not a stack */
+label:has(> input[type="checkbox"]),
+label:has(> input[type="radio"]) {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.42rem;
+  font-weight: 400;
+}
+
+fieldset {
+  border: 1px solid #dbe1ec;
+  border-radius: 8px;
+  padding: 0.8rem 0.95rem 0.95rem;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.1rem;
+  align-items: center;
+}
+
+legend {
+  padding: 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5a6478;
+}
+
+/* --- buttons ------------------------------------------------------------- */
+
+button {
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  padding: 0.5rem 0.95rem;
+  border: 1px solid #2f5bd7;
+  border-radius: 6px;
+  background: #2f5bd7;
+  color: #ffffff;
+  cursor: pointer;
+  min-height: 2.35rem;
+}
+
+button:hover:not(:disabled) {
+  background: #2749b0;
+  border-color: #2749b0;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* secondary treatment for row-level actions, which are usually in a table */
+td button {
+  background: #ffffff;
+  color: #24304a;
+  border-color: #c9d1e0;
+  padding: 0.3rem 0.6rem;
+  min-height: 0;
+  font-size: 0.84rem;
+}
+
+td button:hover:not(:disabled) {
+  background: #eef1f8;
+  border-color: #98a6c0;
+}
+
+/* --- tables and lists ---------------------------------------------------- */
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6rem 0 1.2rem;
+  font-size: 0.92rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid #e2e7f0;
+  vertical-align: middle;
+}
+
+th {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5a6478;
+  background: #eef1f8;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+ul,
+ol {
+  padding-left: 1.15rem;
+  margin: 0 0 1.1rem;
+  line-height: 1.65;
+}
+
+li {
+  margin-bottom: 0.3rem;
+}
+
+/* --- state and accessibility --------------------------------------------- */
+
+:focus-visible {
+  outline: 2px solid #2f5bd7;
+  outline-offset: 2px;
+}
+
+[aria-invalid="true"] {
+  border-color: #b4392c;
+}
+
+[role="alert"] {
+  color: #b4392c;
+  font-size: 0.88rem;
+  font-weight: 500;
+  margin: 0.2rem 0 0.7rem;
+}
+
+/* --- narrow screens ------------------------------------------------------ */
+
+@media (max-width: 34rem) {
+  input,
+  select,
+  textarea {
+    min-width: 0;
+    width: 100%;
+  }
+
+  label {
+    width: 100%;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+  }
+}
