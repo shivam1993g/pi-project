@@ -283,11 +283,40 @@ export async function applyBaselineStyles(appRoot: string, baselinePath: string)
   return true;
 }
 
+
+/**
+ * Cheap provisional report, written during the run.
+ *
+ * Every other safety net here hangs off agent_settled. If a child process the
+ * agent starts never returns - a hanging `npm test` was the case that exposed
+ * this - Pi never settles, the runner kills it at CHALLENGE_TIMEOUT_MS, and none
+ * of this extension runs at all. No report means FALLBACK_PARTIAL and a
+ * hardcoded "failed", however much working code is on disk.
+ *
+ * So put an honest floor on disk as early as there is one to write: zero
+ * entries, status `partial`, no claims. It costs no model tokens and no
+ * subprocess. ensureReport() replaces it with real Vitest evidence at settle.
+ */
+async function writeProvisionalReport(appRoot: string): Promise<boolean> {
+  const reportPath = path.join(appRoot, REPORT_FILE);
+  if (await readReport(reportPath)) return false; // something is already there
+  const assumptions = await readRecordedAssumptions(appRoot);
+  const report = {
+    ...synthesizeReport([], assumptions),
+    summary:
+      "Provisional report written by the harness while the run was still in progress. " +
+      "It was not replaced with verified test evidence, so the run did not reach a clean finish.",
+  };
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  return true;
+}
+
 export default function reportWriter(pi: ExtensionAPI) {
   const appRoot = process.cwd();
   const reportPath = path.join(appRoot, REPORT_FILE);
   let observedTestCommand: string | undefined;
   let repairAttempted = false;
+  let provisionalWritten = false;
   let reportIsStale = false;
 
   // Remember the command the agent actually used, so a repaired entry is truthful.
@@ -296,6 +325,14 @@ export default function reportWriter(pi: ExtensionAPI) {
     const command = String(asRecord(event.input)?.command ?? "").trim();
     if (command && isTestCommand(command)) observedTestCommand = command;
     return undefined;
+  });
+
+  // A floor on disk, in case the run never settles.
+  pi.on("turn_end", async (_event, context) => {
+    if (provisionalWritten) return;
+    provisionalWritten = true;
+    const wrote = await writeProvisionalReport(appRoot).catch(() => false);
+    if (wrote && context.hasUI) context.ui.notify("Provisional report.partial.json written", "info");
   });
 
   // Last moment before Pi stops for good.
